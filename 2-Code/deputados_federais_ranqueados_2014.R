@@ -204,7 +204,7 @@ listas_partidos_2014_ranqueados <- listas_2014_ranqueadas |>
 DISTANCIA_ULTIMO_ELEITO <- function(df) {
   # Identificando o último eleito a partir do rank 
   ultimo_eleito <- df |>
-    filter(DESC_SIT_TOT_TURNO == "ELEITO" | DESC_SIT_TOT_TURNO == "MÉDIA") |>
+    filter(DESC_SIT_TOT_TURNO == "ELEITO" | DESC_SIT_TOT_TURNO == "MÉDIA" | DESC_SIT_TOT_TURNO == "ELEITO POR MÉDIA" | DESC_SIT_TOT_TURNO == "ELEITO POR QP") |>
     arrange(desc(RANK_LISTA)) |>
     slice(1)
   
