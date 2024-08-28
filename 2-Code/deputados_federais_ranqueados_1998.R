@@ -101,8 +101,23 @@ votos_legenda <- deputados_federais_1998 |>
 # Soma total de votos preferenciais: coligações e partidos isolados
 votos_nominais <- deputados_federais_1998 |> 
   group_by(SIGLA_UE, 
-           ID_CEPESP) |>
+           ID_CEPESP,
+           NOME_CANDIDATO,
+           NOME_PARTIDO) |>
   summarise(TOTAL_VOTOS_NOMINAIS = sum(as.numeric(QTDE_VOTO_NOMINAL), na.rm = TRUE))
+
+# Dropando votos nulos, brancos, anulados e em legenda
+votos_nominais <- votos_nominais |>
+  filter(!NOME_CANDIDATO %in% c("VOTO LEGENDA",
+                                "VOTO NULO",
+                                "VOTO BRANCO",
+                                "VOTO ANULADO E APURADO EM SEPARADO"))
+
+# Dropando variável NOME_CANDIDATO
+votos_nominais <- votos_nominais |>
+  ungroup() |>
+  select(-NOME_CANDIDATO,
+         -NOME_PARTIDO)
 
 # Soma total de votos no partido: legenda + preferenciais 
 votos_partido <- deputados_federais_1998 |>
@@ -165,14 +180,13 @@ deputados_federais_1998 <- deputados_federais_1998 |>
 
 # Identifica candidatos individuais
 candidatos_individuais <- deputados_federais_1998 |>
-  filter(DESC_SIT_TOT_TURNO %in% c("SUPLENTE", 
-                                   "ELEITO",
-                                   # Capturamos as sobras com a MÉDIA!
-                                   "MÉDIA",
-                                   "NÃO ELEITO")) |>
   distinct(SIGLA_UE,
-           NOME_CANDIDATO,
-           .keep_all = TRUE)
+           ID_CEPESP,
+           .keep_all = TRUE) |>
+  filter(!NOME_CANDIDATO %in% c("VOTO LEGENDA",
+                                "VOTO NULO",
+                                "VOTO BRANCO",
+                                "VOTO ANULADO E APURADO EM SEPARADO"))
 
 # Ranquea candidatos dentro da lista
 listas_1998_ranqueadas <- candidatos_individuais |>
@@ -199,23 +213,22 @@ listas_partidos_1998_ranqueados <- listas_1998_ranqueadas |>
 # Estimando distâncias entre candidatos  ---------------------------------------
 
 # Função para estimar distância (em votos) para o último eleito em cada lista
-DISTANCIA_ULTIMO_ELEITO <- function(df) {
+DISTANCIA_ULTIMO_ELEITO_LISTA <- function(df) {
   # Identificando o último eleito a partir do rank 
-  ultimo_eleito <- df |>
-    filter(DESC_SIT_TOT_TURNO == "ELEITO" | DESC_SIT_TOT_TURNO == "MÉDIA") |>
+  ultimo_eleito_lista <- df |>
     arrange(desc(RANK_LISTA)) |>
     slice(1)
   
   # Identificando último eleito
-  if (nrow(ultimo_eleito) == 0) {
+  if (nrow(ultimo_eleito_lista) == 0) {
     df <- df |>
-      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = NA,
+      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_NA_LISTA_EM_VOTOS = NA,
              ULTIMO_ELEITO = 0)
   } else {
     # Calculando a distância para o último eleito da lista para cada candidato
     df <- df |>
-      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = ultimo_eleito$TOTAL_VOTOS_NOMINAIS - TOTAL_VOTOS_NOMINAIS,
-             ULTIMO_ELEITO = ifelse(ID_CEPESP == ultimo_eleito$ID_CEPESP, 1, 0))
+      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = ultimo_eleito_lista$TOTAL_VOTOS_NOMINAIS - TOTAL_VOTOS_NOMINAIS,
+             ULTIMO_ELEITO = ifelse(ID_CEPESP == ultimo_eleito_lista$ID_CEPESP, 1, 0))
   }
   
   return(df)
@@ -225,14 +238,10 @@ DISTANCIA_ULTIMO_ELEITO <- function(df) {
 resultados <- listas_partidos_1998_ranqueados |>
   group_by(UF, 
            ID_LEGENDA) |>
-  do(data.frame(DISTANCIA_ULTIMO_ELEITO(.)))
-
-# Dropando NAs
-resultados_filtrados <- resultados |>
-  filter(!is.na(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS))
+  group_modify(~ DISTANCIA_ULTIMO_ELEITO_LISTA(.x))
 
 # Adiciona coluna para distâncias em votos em módulo
-resultados_filtrados_final <- resultados_filtrados |>
+resultados_final <- resultados |>
   mutate(DISTANCIA_ABSOLUTA_PARA_ULTIMO_ELEITO_EM_VOTOS = abs(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS)) |>
   select(-COD_SITUACAO_CANDIDATO_TOT, 
          -DES_SITUACAO_CANDIDATURA,
@@ -244,19 +253,30 @@ resultados_filtrados_final <- resultados_filtrados |>
          -QTDE_VOTO_NOMINAL,
          -QTDE_VOTO_LEGENDA)
 
-# Esima as distâncias em votos entre ranques para candidatos de uma mesma lista
-final <- resultados_filtrados_final |>
+# Estima as distâncias em votos entre ranques para candidatos de uma mesma lista
+final <- resultados |>
   arrange(SIGLA_UE, 
           ID_LEGENDA, 
           RANK_LISTA) |>
   group_by(SIGLA_UE, 
            ID_LEGENDA) |> 
-  mutate(DISTANCIA_EM_VOTOS_PARA_N_MENOS_UM = TOTAL_VOTOS_NOMINAIS - lag(TOTAL_VOTOS_NOMINAIS, 
-                                                                         order_by = RANK_LISTA)) |> 
+  mutate(DISTANCIA_EM_VOTOS_PARA_N_MENOS_UM_LISTA = TOTAL_VOTOS_NOMINAIS - lag(TOTAL_VOTOS_NOMINAIS, 
+                                                                               order_by = RANK_LISTA)) |> 
+  ungroup()
+
+# Estima as distâncias em votos entre ranques para candidatos de um mesmo partido
+final_lista_partidos <- final |>
+  arrange(SIGLA_UE, 
+          ID_LEGENDA, 
+          RANK_PARTIDO) |>
+  group_by(SIGLA_UE, 
+           ID_LEGENDA) |> 
+  mutate(DISTANCIA_EM_VOTOS_PARA_N_MENOS_UM_PARTIDO = TOTAL_VOTOS_NOMINAIS - lag(TOTAL_VOTOS_NOMINAIS, 
+                                                                                 order_by = RANK_PARTIDO)) |> 
   ungroup()
 
 # Estima o share de votos do candidato dentro da lista
-final_final_1998 <- final |>
+final_final_1998 <- final_lista_partidos |>
   group_by(SIGLA_UE,
            NOME_CANDIDATO) |>
   mutate(SHARE_CANDIDATO_LISTA = round((TOTAL_VOTOS_NOMINAIS / TOTAL_VOTOS_LISTA) * 100, 2))
