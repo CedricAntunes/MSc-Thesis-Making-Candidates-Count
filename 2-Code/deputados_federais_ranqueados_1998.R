@@ -212,22 +212,32 @@ listas_partidos_1998_ranqueados <- listas_1998_ranqueadas |>
 
 # Estimando distâncias entre candidatos  ---------------------------------------
 
-# Função para estimar distância (em votos) para o último eleito em cada lista
 DISTANCIA_ULTIMO_ELEITO_LISTA <- function(df) {
-  # Identificando o último eleito a partir do rank 
+  # Identificando último eleito em cada lista 
   ultimo_eleito_lista <- df |>
+    filter(DESC_SIT_TOT_TURNO %in% c("ELEITO", 
+                                     "ELEITO POR QP", 
+                                     "MÉDIA", 
+                                     "ELEITO POR MÉDIA")) |>
     arrange(desc(RANK_LISTA)) |>
     slice(1)
   
-  # Identificando último eleito
+  # Double-check para eleitos
   if (nrow(ultimo_eleito_lista) == 0) {
     df <- df |>
-      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_NA_LISTA_EM_VOTOS = NA,
+      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = NA,
              ULTIMO_ELEITO = 0)
   } else {
-    # Calculando a distância para o último eleito da lista para cada candidato
+    # Calculando distancias (mantendo sinais positivos para eleitos, negativos 
+    # para não eleitos)
     df <- df |>
-      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = ultimo_eleito_lista$TOTAL_VOTOS_NOMINAIS - TOTAL_VOTOS_NOMINAIS,
+      mutate(DISTANCIA_PARA_ULTIMO_ELEITO_EM_VOTOS = 
+               ifelse(DESC_SIT_TOT_TURNO %in% c("ELEITO", 
+                                                "ELEITO POR QP", 
+                                                "MÉDIA", 
+                                                "ELEITO POR MÉDIA"),
+                      TOTAL_VOTOS_NOMINAIS - ultimo_eleito_lista$TOTAL_VOTOS_NOMINAIS,
+                      TOTAL_VOTOS_NOMINAIS - ultimo_eleito_lista$TOTAL_VOTOS_NOMINAIS),
              ULTIMO_ELEITO = ifelse(ID_CEPESP == ultimo_eleito_lista$ID_CEPESP, 1, 0))
   }
   
